@@ -11,7 +11,7 @@
   - [ ] open OperationCycles per WA/PA
 
 
-- [ ] list data sources
+- [ ] list data sources (see sql, too)
   - [ ] DycoPlanEx DispatchList, OperationCycles, ProductionOrders
   - [ ] SAP_Rohdaten maybe
 

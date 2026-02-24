@@ -1,4 +1,4 @@
-########## import the following columns based on load_data.sql
+########## import the following columns based on load_opc_data.sql
 # WA
 # PA
 # Customer
