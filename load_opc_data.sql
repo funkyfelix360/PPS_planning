@@ -8,7 +8,7 @@ load data columns
 DPE_OPC States
 0 = not started / 1 = ongonig / 2 = stopped / 3 = done
 */
-SELECT TOP (1000)
+SELECT
    opc.ProductionOrder as PA
    ,opc.PosNumber
    ,opc.ID as opcID
@@ -33,13 +33,13 @@ SELECT TOP (1000)
    ,opc.ProcessTime as TotalActiveTime
    ,b.Timestamp as opc_endtimestamp
 
-FROM [Operationcycles] opc
-inner join Workplaces wp on opc.CostCenterNumber = wp.Number and IsWPG=1
-inner join DispatchDepartments dp on wp.DispatchDepartmentID = dp.ID
-left join Bookings b on b.OperationCycleID = opc.ID and b.Cancel<>1 and b.Type=2
-left join Machines m on b.MachineID = m.PK_MachinesID
+FROM Operationcycles opc With (NoLock)
+inner join Workplaces wp With (NoLock) on opc.CostCenterNumber = wp.Number and IsWPG=1
+inner join DispatchDepartments dp With (NoLock) on wp.DispatchDepartmentID = dp.ID
+left join Bookings b With (NoLock) on b.OperationCycleID = opc.ID and b.Cancel<>1 and b.Type=2
+left join Machines m With (NoLock) on b.MachineID = m.PK_MachinesID
 
-Where ProductionOrder in (Select PA from BF_DispatchList With (NoLock))
+Where ProductionOrder in (Select Number from ProductionOrders With (NoLock) where StartDate> GETDATE()-365 or FinishedDate is NULL)
 
 Order by PA, PosNumber
 
