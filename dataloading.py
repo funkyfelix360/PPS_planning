@@ -26,4 +26,3 @@ def get_sql_data(query,
     engine = sql.create_engine(connection_string)
     with open(query, 'r') as f:
         return pd.read_sql(f.read(), engine)
-

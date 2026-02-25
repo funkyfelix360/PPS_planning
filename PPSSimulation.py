@@ -1,38 +1,14 @@
 from collections import deque
 
+import pandas as pd
+
 # ----------------------------
 # Kapazitätstabelle
 # Einheit = Aufträge pro Tag
 # 80% von max. Kapazität
 # ----------------------------
-lookup_capa_per_day = {
-    "Analyselabor": 20,         #Annahme (keine aktuellen Daten)
-    "AOI": 27,
-    "Bohren & Fräsen": 50,
-    "Dumpresistor": 3,
-    "Dünnschichtlabor": 6,
-    "Endkontrolle Hilfsp": 31,
-    "Endprüfung Visuell": 17,
-    "Extern Allgemein": 20,     #Annahme (keine aktuellen Daten)
-    "Extern Hofstetter": 20,    #Annahme (keine aktuellen Daten)
-    "Extern MicroContact": 20,  #Annahme (keine aktuellen Daten)
-    "Fotochemie": 147,
-    "Fotochemie Cu-Reduzieren": 22,
-    "Gal Cu Yasmin": 16,
-    "Gal Nickel Gold": 10,
-    "Galvanik Hilfsp": 34,
-    "IST Tester": 16,
-    "Lager": 30,
-    "Laser": 44,
-    "Laser CO2": 6,
-    "Plasma": 25,
-    "Presserei": 55,
-    "Presserei Hilfsp": 30,
-    "Schlifflabor": 20,        #Annahme (keine aktuellen Daten)
-    "Siebdruck": 37,
-    "XY-Messanlage": 14,
-    "Zwischenkontrolle": 27,
-}
+lookup_capa_per_day = pd.read_csv('./capa_per_day.csv', delimiter='\t')
+lookup_capa_per_day = lookup_capa_per_day.set_index('CostCenterName')['Maximum'].mul(0.8).to_dict()
 
 class Workplace:
     def __init__(self, name, capa_per_day):
@@ -60,3 +36,25 @@ class ProductionOrder:
         self.next_step = 0
         self.next_dispatchdep = None
         self.age = 0
+
+
+class OperationCycle:
+    def __init__(self, PA, PosNumber, opcID, WorkPlaceName, Dispatchdepartment, Machine, AdhocChangeState, opc_state, opc_state_text, PlannedAmountPieces, ActualAmountPieces, PlannedAmountBoards, ActualAmountBoards, PlannedOperationTime, ActualOperationTime, TotalInterruptTime, TotalActiveTime, opc_endtimestamp):
+        self.PA = PA
+        self.PosNumber =
+        self.opcID =
+        self.WorkPlaceName =
+        self.Dispatchdepartment =
+        self.Machine =
+        self.AdhocChangeState =
+        self.opc_state =
+        self.opc_state_text =
+        self.PlannedAmountPieces =
+        self.ActualAmountPieces =
+        self.PlannedAmountBoards =
+        self.ActualAmountBoards =
+        self.PlannedOperationTime =
+        self.ActualOperationTime =
+        self.TotalInterruptTime =
+        self.TotalActiveTime =
+        self.opc_endtimestamp =
