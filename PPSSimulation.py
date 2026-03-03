@@ -1,4 +1,5 @@
 from collections import deque, defaultdict
+from datetime import datetime
 
 import pandas as pd
 
@@ -10,13 +11,29 @@ import pandas as pd
 lookup_capa_per_day = pd.read_csv('./capa_per_day.csv', delimiter='\t')
 lookup_capa_per_day = lookup_capa_per_day.set_index('CostCenterName')['Maximum'].mul(0.8).to_dict()
 
+class sim_date:
+    def __init__(self, date=datetime.today()):
+        self.date = date
+
+    def year(self):
+        return self.date.year
+
+    def month(self):
+        return self.date.month
+
+    def day(self):
+        return self.date.day
+
+    def get_date(self):
+        return self.date
+
 class Workplace:
-    def __init__(self, name, capa_per_day):
+    def __init__(self, name, capa_per_day=None):
         self.name = name
         self.location = None
-        self.capa_per_day = capa_per_day
-        self.input_wip = deque()
-        self.output_wip = deque()
+        self.capa_per_day = capa_per_day # use the floor of capa_per_day
+        self.input_wip: list[ProductionOrder] = []
+        self.output_wip: list[ProductionOrder] = []
 
     def run(self):
         """
@@ -28,10 +45,26 @@ class Workplace:
         Returns:
             None
         """
+        if self.capa_per_day is None:
+            return Exception ('No Capacity defined for Workplace')
+        if type(self.capa_per_day) is not int:
+            self.capa_per_day = int(self.capa_per_day)
         # Convert up to capa_per_day items from input to output
-        self.output_wip = deque(list(self.input_wip)[:self.capa_per_day])
-        self.input_wip = deque(list(self.input_wip)[self.capa_per_day:])
-        return None
+        self.output_wip = list(self.input_wip)[:self.capa_per_day]
+        self.input_wip = list(self.input_wip)[self.capa_per_day:]
+
+    def ship_output_wip(self):
+        for pa in self.output_wip:
+            pa.current_step.mark_complete()
+            pa.next_step.workplace.input_wip.append(pa)
+        self.output_wip = []
+
+    def load_capa_from_file(self):
+        self.capa_per_day = lookup_capa_per_day[self.name]
+
+    def get_dispatchlist(self):
+        return self.input_wip
+
 
 class ProductionOrder:
     """
@@ -95,7 +128,7 @@ class ProductionOrder:
         """
         self.id = id
         self.operationcycles = operationcycles
-        self.current_step = current_step
+        self.current_step: OperationCycle = current_step
         self.current_dispatchdep = current_dispatchdep
         self.next_step = next_step
         self.next_dispatchdep = next_dispatchdep
@@ -132,8 +165,8 @@ class OperationCycle:
     :ivar Dispatchdepartment: Department responsible for dispatching the work.
     :ivar Machine: Identification or name of the machine involved in the cycle.
     :ivar AdhocChangeState: Indicates if an ad-hoc change is applied to the cycle state.
-    :ivar opc_state: Numeric representation of the operational cycle's state.
-    :ivar opc_state_text: Text description of the operational cycle's state.
+    :ivar opc_state: Numeric representation of the operational cycle's state. 0 = not started / 1 = ongonig / 2 = stopped / 3 = done
+    :ivar opc_state_text: Text description of the operational cycle's state. 0 = not started / 1 = ongonig / 2 = stopped / 3 = done
     :ivar PlannedAmountPieces: Planned number of workpieces for the cycle.
     :ivar ActualAmountPieces: Actual number of workpieces completed in the cycle.
     :ivar PlannedAmountBoards: Planned number of boards for the cycle.
@@ -144,13 +177,13 @@ class OperationCycle:
     :ivar TotalActiveTime: Total active time logged for the cycle.
     :ivar opc_endtimestamp: Timestamp when the operational cycle ended.
     """
-    def __init__(self, PA=None, PosNumber=None, opcID=None, WorkPlaceName=None,
-                 Dispatchdepartment=None, Machine=None, AdhocChangeState=None,
+    def __init__(self, PA=None, PosNumber=None, opcID=None, workplace=None,
+                 Dispatchdepartment=None, machine=None, AdhocChangeState=None,
                  opc_state=None, opc_state_text=None, PlannedAmountPieces=None,
                  ActualAmountPieces=None, PlannedAmountBoards=None,
                  ActualAmountBoards=None, PlannedOperationTime=None,
                  ActualOperationTime=None, TotalInterruptTime=None,
-                 TotalActiveTime=None, opc_endtimestamp=None):
+                 TotalActiveTime=None, opc_endtimestamp=None, next_step=None):
         """
         Represents a data structure to handle and store operational data regarding a
         workplace's planned and actual performance, operational state, and timestamps.
@@ -236,9 +269,9 @@ class OperationCycle:
         self.opcID = opcID
         self.PA = PA
         self.PosNumber = PosNumber
-        self.WorkPlaceName = WorkPlaceName
+        self.workplace = workplace
         self.Dispatchdepartment = Dispatchdepartment
-        self.Machine = Machine
+        self.machine = machine
         self.AdhocChangeState = AdhocChangeState
         self.opc_state = opc_state
         self.opc_state_text = opc_state_text
@@ -251,3 +284,10 @@ class OperationCycle:
         self.TotalInterruptTime = TotalInterruptTime
         self.TotalActiveTime = TotalActiveTime
         self.opc_endtimestamp = opc_endtimestamp
+        self.next_step = next_step
+
+    def mark_complete(self, date: sim_date = sim_date(), machine = None):
+        self.opc_state = 3
+        self.opc_state_text = 'done'
+        self.opc_endtimestamp = date.get_date()
+        self.machine = machine

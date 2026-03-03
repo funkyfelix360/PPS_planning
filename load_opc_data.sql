@@ -28,6 +28,7 @@ inner join DispatchDepartments dp With (NoLock) on wp.DispatchDepartmentID = dp.
 left join Bookings b With (NoLock) on b.OperationCycleID = opc.ID and b.Cancel<>1 and b.Type=2
 left join Machines m With (NoLock) on b.MachineID = m.PK_MachinesID
 Where ProductionOrder in (Select Number from ProductionOrders With (NoLock) where StartDate> GETDATE()-365 or FinishedDate is NULL)
+and (ProductionOrder > 84000) -- TODO Testing
 Order by PA, PosNumber;
 
 /*

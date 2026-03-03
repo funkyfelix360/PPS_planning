@@ -20,4 +20,5 @@ SELECT
   inner join Products p with (NoLock) on ProductID = p.ID
   inner join DWH_Dyconex.global.Enumerations AS ge with (NoLock) on ge.ValueInt=[PhaseCode] and GroupNumber=1
   Where po.[Number] in (Select Number from ProductionOrders With (NoLock) where StartDate> GETDATE()-365 or FinishedDate is NULL)
+  and (not p.Version like 'KUR%' and po.[Number]>84000) -- TODO Testing
   order by PA;
