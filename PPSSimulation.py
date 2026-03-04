@@ -1,5 +1,5 @@
 from collections import deque, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -8,12 +8,16 @@ import pandas as pd
 # Einheit = Aufträge pro Tag
 # 80% von max. Kapazität
 # ----------------------------
-lookup_capa_per_day = pd.read_csv('./capa_per_day.csv', delimiter='\t')
-lookup_capa_per_day = lookup_capa_per_day.set_index('CostCenterName')['Maximum'].mul(0.8).to_dict()
+lookup_capa_per_day = pd.read_csv('./capa_per_day.csv', delimiter=';', encoding='UTF-8')
+# load a daily capacity of at least one opc per day
+lookup_capa_per_day = lookup_capa_per_day.set_index('Workplace')['MaxOPCs'].mul(0.8).to_dict()
+for key in lookup_capa_per_day.keys():
+    if lookup_capa_per_day[key] < 1:
+        lookup_capa_per_day[key] = 1
 
 class sim_date:
-    def __init__(self, date=datetime.today()):
-        self.date = date
+    def __init__(self, date=datetime.today(), hour=datetime.now().hour):
+        self.date = date.replace(hour=hour, minute=0, second=0, microsecond=0)
 
     def year(self):
         return self.date.year
@@ -24,18 +28,28 @@ class sim_date:
     def day(self):
         return self.date.day
 
-    def get_date(self):
+    def hour(self):
+        return self.date.hour
+
+    def next_day(self, delta = 1):
+        self.date += timedelta(days=delta)
         return self.date
+
+    def next_hour(self, delta = 1):
+        self.date += timedelta(hours=delta)
 
 class Workplace:
     def __init__(self, name, capa_per_day=None):
         self.name = name
         self.location = None
-        self.capa_per_day = capa_per_day # use the floor of capa_per_day
+        if capa_per_day is None:
+            self.load_capa_from_file()
+        else:
+            self.capa_per_day = capa_per_day # use the floor of capa_per_day
         self.input_wip: list[ProductionOrder] = []
         self.output_wip: list[ProductionOrder] = []
 
-    def run(self):
+    def run(self, date = sim_date()):
         """
         Process work-in-progress items according to workplace capacity.
 
@@ -45,26 +59,42 @@ class Workplace:
         Returns:
             None
         """
+        print(self.name, 'running', len(self.input_wip), 'items')
         if self.capa_per_day is None:
-            return Exception ('No Capacity defined for Workplace')
+            raise Exception ('No Capacity defined for Workplace')
         if type(self.capa_per_day) is not int:
             self.capa_per_day = int(self.capa_per_day)
         # Convert up to capa_per_day items from input to output
-        self.output_wip = list(self.input_wip)[:self.capa_per_day]
+        if len(self.input_wip) < self.capa_per_day:
+            self.output_wip = self.input_wip
+        else:
+            self.output_wip = list(self.input_wip)[:self.capa_per_day]
+        for pa in self.output_wip:
+            pa.current_step.mark_complete(date)
         self.input_wip = list(self.input_wip)[self.capa_per_day:]
 
     def ship_output_wip(self):
         for pa in self.output_wip:
-            pa.current_step.mark_complete()
+            print('\t', pa.PA, 'shipped to', pa.next_step.workplace, '!')
             pa.next_step.workplace.input_wip.append(pa)
         self.output_wip = []
 
-    def load_capa_from_file(self):
-        self.capa_per_day = lookup_capa_per_day[self.name]
+    def run_and_ship(self, date = sim_date()):
+        self.run(date)
+        self.ship_output_wip()
+
+    def load_capa_from_file(self, default=1):
+        try:
+            self.capa_per_day = lookup_capa_per_day[self.name]
+        except KeyError as e:
+            print(f'Could not find {self.name} in lookup_capa_per_day')
+            if default:
+                self.capa_per_day = default
+            else:
+                raise e
 
     def get_dispatchlist(self):
         return self.input_wip
-
 
 class ProductionOrder:
     """
@@ -289,5 +319,11 @@ class OperationCycle:
     def mark_complete(self, date: sim_date = sim_date(), machine = None):
         self.opc_state = 3
         self.opc_state_text = 'done'
-        self.opc_endtimestamp = date.get_date()
+        self.opc_endtimestamp = date.date
         self.machine = machine
+        self.PA.current_step = self.next_step
+        try:
+            self.PA.next_step = self.next_step.next_step
+        except AttributeError as e:
+            # there is no next step
+            self.PA.next_step = None

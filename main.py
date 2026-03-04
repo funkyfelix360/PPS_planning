@@ -1,15 +1,16 @@
-from collections import defaultdict
-
 import numpy as np
-import pandas as pd
-from time import time as timestamp
+from time import time as timestamp, sleep
 
+import matplotlib; matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 import dataloading as load
 import PPSSimulation as pps
-from PPSSimulation import Workplace
+from PPSSimulation import sim_date
 
+
+# import webapp as web
 
 def build_dataset():
     """
@@ -38,8 +39,6 @@ def build_dataset():
 
     opcs = {}
     opcs_by_PA = {}
-
-    # todo Workplaces and die opcs hinyufügen
     # generate and group opcs by PA
     for _, row in opcs_data.iterrows():
         obj = pps.OperationCycle(*row)
@@ -66,6 +65,14 @@ def build_dataset():
         for opc in production_orders[pa].operationcycles:
             opc.next_step = production_orders[pa].operationcycles[production_orders[pa].operationcycles.index(opc)+1] if production_orders[pa].operationcycles.index(opc)+1 < len(production_orders[pa].operationcycles) else None
 
+    for opc in opcs.values():
+        try:
+            opc.PA = production_orders[opc.PA]
+        except KeyError as e:
+            print(f'Could not find {opc.PA} in production_orders')
+            print(e)
+            continue
+
     print(f'Loading time elapsed: {timestamp() - t0}')
 
     # find active opc_id
@@ -75,24 +82,46 @@ def build_dataset():
         opcs_of_PA = opcs_by_PA[pa]
         for opc in reversed(opcs_of_PA): # go from the end of the list to prevent starting on a skipped opc
             if opc.opc_state!=0:
-                production_orders[pa].current_step = opc.opcID
+                production_orders[pa].current_step = opc
                 break
         if production_orders[pa].current_step:
-            if opcs[production_orders[pa].current_step].workplace:
-                workplaces[opcs[production_orders[pa].current_step].workplace].input_wip.append(production_orders[pa])
+            if production_orders[pa].current_step.workplace:
+                workplaces[production_orders[pa].current_step.workplace].input_wip.append(production_orders[pa])
+
+    # TODO Add workplaces in OPC as Object
 
     return production_orders, opcs, workplaces, opcs_by_PA
 
 if __name__ == '__main__':
     # start with getting the data set from sql
     production_orders, opcs, workplaces, opcs_by_PA = build_dataset()
-
+    simtime = pps.sim_date()
     fig, ax = plt.subplots()
     names = [workplaces[wp].name for wp in workplaces.keys()]
-    ax.bar(names, [len(workplaces[wp].input_wip) for wp in workplaces.keys()])
+    # creating the first plot and frame
+    graph = ax.bar(names, [len(workplaces[wp].input_wip) for wp in workplaces.keys()])
     ax.set_xlabel("Workplace")
-    ax.set_ylabel("Length of input_WIP")
+    ax.set_ylabel("WIP in PA")
+    ax.set_xticks(range(len(names)))
     ax.set_xticklabels(names, rotation=45, ha="right")
-    plt.tight_layout()
-    plt.show()
 
+    # updates the data and graph
+    def update(frame):
+        global graph
+        for wp in workplaces.values():
+            wp.run(simtime)
+        # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
+        for wp in workplaces.values():
+            wp.ship_output_wip()
+        # updating the graph
+        heights = [len(workplaces[wp].input_wip) for wp in workplaces.keys()]
+        for bar, h in zip(graph, heights):
+            bar.set_height(h)
+        simtime.next_day()
+        print(f'Frame: {frame}', simtime.date)
+        sleep(.5)
+        return graph
+
+global anim
+anim = FuncAnimation(fig, update, frames=200)
+plt.show()

@@ -1,3 +1,4 @@
+import numpy as np
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,7 +19,8 @@ st.set_page_config(layout="wide")
 st.title("Workplace Dashboard")
 
 
-def build_webpage(workplaces, production_orders, opcs):
+#def build_webpage(workplaces, production_orders, opcs):
+def build_webpage():
     """
     Builds and displays a workplace dashboard web page using Streamlit, providing the
     user interactive tools to visualize and modify workplace-related data such as
@@ -48,14 +50,16 @@ def build_webpage(workplaces, production_orders, opcs):
     # --------------------------------------------------
     # Sidebar: DataFrame selector
     # --------------------------------------------------
-
-    workplace_names = [wp.name for wp in workplaces]
+    lookup_capa_per_day = pd.read_csv('./capa_per_day.csv', delimiter=';', encoding='UTF-8')
+    # load a daily capacity of at least one opc per day
+    workplace_names = np.unique(lookup_capa_per_day[["Workplace"]].to_numpy().flatten())
+    # workplace_names = [wp.name for wp in workplaces]
     selected_name = st.sidebar.selectbox("Select Workplace", workplace_names)
 
-    selected_workplace = next(wp for wp in workplaces if wp.name == selected_name)
+    selected_workplace = next(wp for wp in workplace_names if wp == selected_name)
 
-    st.subheader(f"DataFrame: {selected_workplace.name}")
-    st.dataframe(selected_workplace.df, use_container_width=True)
+    st.subheader(f"DataFrame: {selected_workplace}")
+    #st.dataframe(selected_workplace.df, use_container_width=True)
 
     # --------------------------------------------------
     # Bar Plot
@@ -63,8 +67,8 @@ def build_webpage(workplaces, production_orders, opcs):
 
     st.subheader("Input WIP per Workplace")
 
-    names = [wp.name for wp in workplaces]
-    wip_lengths = [len(wp.input_WIP) for wp in workplaces]
+    names = [wp for wp in workplace_names]
+    wip_lengths = [1 for wp in workplace_names]
 
     fig, ax = plt.subplots()
     ax.bar(names, wip_lengths)
@@ -81,8 +85,8 @@ def build_webpage(workplaces, production_orders, opcs):
     st.subheader("Edit Capacity per Day")
 
     capa_df = pd.DataFrame({
-        "Workplace": [wp.name for wp in workplaces],
-        "Capacity per Day": [float(wp.capa_per_day) for wp in workplaces]
+        "Workplace": [wp for wp in workplace_names],
+        "Capacity per Day": [float(1) for wp in workplace_names]
     })
 
     edited_df = st.data_editor(
@@ -101,11 +105,13 @@ def build_webpage(workplaces, production_orders, opcs):
 
     # Apply changes back to objects
     if st.button("Apply Capacity Changes"):
-        for wp in workplaces:
+        for wp in workplace_names:
             new_value = edited_df.loc[
-                edited_df["Workplace"] == wp.name,
+                edited_df["Workplace"] == wp,
                 "Capacity per Day"
             ].values[0]
-            wp.capa_per_day = float(new_value)
 
         st.success("Capacities updated successfully.")
+
+if __name__ == '__main__':
+    build_webpage()
