@@ -10,4 +10,4 @@ if __name__ == '__main__':
     # start with getting the data set from sql
     production_orders, opcs, workplaces, dispatchdepartments, opcs_by_PA = pps.build_dataset()
 
-    pps.step_based_simulation(production_orders, opcs, workplaces, dispatchdepartments)
+    pps.day_based_simulation(production_orders, opcs, workplaces, dispatchdepartments)

@@ -10,3 +10,6 @@ test.py
 templates/index.html
 update_workplaces_parameters.py
 processingslots_per_workplace.csv
+finish.png
+start.png
+test.txt

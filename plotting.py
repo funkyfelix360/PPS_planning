@@ -38,3 +38,7 @@ def update_plot(fig, ax, ax2, dispatchdepartments, workplaces, title=''):
     fig.suptitle(title)
     plt.draw()
     plt.pause(0.001)
+
+def save_plot(fig, filename):
+    fig.savefig(filename)
+    plt.close(fig)

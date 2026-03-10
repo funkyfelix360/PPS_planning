@@ -47,11 +47,12 @@ def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartmen
                           logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
                           steps=168):
     simtime = sim_clock()
-    fig, [ax, ax2] = plt.initialize_plot()
+    fig, ax, ax2 = plt.initialize_plot()
     with open(logpath, 'a+', encoding='UTF-8') as f:
         f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
         f.write('Dispatchlists:\n')
         for disp in dispatchdepartments.values():
+            f.write(disp.name+'\n')
             for wp in disp.workplaces:
                 f.write(f'Workplace: {wp.name} has {len(wp.input_wip)} WIP\n')
                 f.write(','.join([str(elem.PA) + ' ' + str(elem.current_step.opcID) + ' ' + str(
@@ -70,17 +71,19 @@ def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartmen
                 # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
                 for disp in dispatchdepartments.values():
                     disp.ship_output_wip(simtime, f)
-    plt.savefig(f'./finish.png')
+    plt.save_plot(fig, './finish.png')
 
 
 def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartments,
                           logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',steps=21):
     simtime = sim_clock()
-    fig, [ax, ax2] = plt.initialize_plot(dispatchdepartments, workplaces)
+    fig, ax, ax2 = plt.initialize_plot(dispatchdepartments, workplaces)
+
     with open(logpath, 'a+', encoding='UTF-8') as f:
         f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
         f.write('Dispatchlists:\n')
         for disp in dispatchdepartments.values():
+            f.write('Dispatchlists:\n')
             for wp in disp.workplaces:
                 f.write(f'Workplace: {wp.name} has {len(wp.input_wip)} WIP\n')
                 f.write(','.join([str(elem.PA) + ' ' + str(elem.current_step.opcID) for elem in wp.input_wip]) + '\n')
@@ -97,35 +100,7 @@ def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartment
                 # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
                 for disp in dispatchdepartments.values():
                     disp.ship_output_wip(simtime, f)
-
-
-    def update(step=0):
-        with open(logpath, 'a+', encoding='UTF-8') as f:
-            f.write(f'Step: {step} \n')
-            for disp in dispatchdepartments.values():
-                disp.step(logfile=f)
-            # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
-            for disp in dispatchdepartments.values():
-                disp.ship_output_wip(logfile=f)
-
-        # updating the graph
-        heights = [sum([len(workplaces[wp.name].input_wip) for wp in dispatchdepartments[disp].workplaces]) for disp in
-                   dispatchdepartments.keys()]
-        ax.cla()
-        ax.bar(names, heights)
-        ax.set_xlabel("Dispatch Department")
-        ax.set_ylabel("WIP in PA")
-        ax.set_xticks(range(len(names)))
-        ax.set_xticklabels(names, rotation=45, ha="right")
-        ax.set_ylim(0, 150)
-        ax2.bar(['fertig'], [len(workplaces[wp].output_wip) for wp in workplaces.keys() if wp == 'Abschlussbuchung'])
-        sleep(.2)
-        plt.title('Tag ' + str(step))
-        plt.draw()
-        plt.pause(0.001)
-
-
-        plt.savefig(f'./finish.png')
+    plt.save_plot(fig, './finish.png')
 
 
 class sim_clock():
@@ -517,8 +492,10 @@ def build_dataset():
 
     # get POs as dataframe
     production_orders_data = load.get_sql_data('.\\load_PO_data.sql')
+    # print('POs loaded:', len(np.unique(production_orders_data[['PA']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
     # get opcs as dataframe
     opcs_data = load.get_sql_data('.\\load_opc_data.sql')
+    # print('opcs loaded:', len(np.unique(opcs_data[['opc']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
 
     workplaces_data = np.unique(opcs_data[["WorkPlaceName"]].to_numpy().flatten())
     dispatchdepartments_data = np.unique(opcs_data[["Dispatchdepartment"]].to_numpy().flatten())
