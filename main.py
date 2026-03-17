@@ -8,6 +8,6 @@ import PPSSimulation as pps
 
 if __name__ == '__main__':
     # start with getting the data set from sql
-    production_orders, opcs, workplaces, dispatchdepartments, opcs_by_PA = pps.build_dataset()
+    production_orders, opcs, workplaces, dispatchdepartments, opcs_by_PA = pps.build_dataset(days_offset=14)
 
     pps.day_based_simulation(production_orders, opcs, workplaces, dispatchdepartments)

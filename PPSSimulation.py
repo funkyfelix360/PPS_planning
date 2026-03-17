@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta
-from time import time as timestamp, sleep
+from time import time as timestamp
 
 import numpy as np
 import pandas as pd
 
+import dataloading as load
 import plotting as plt
 
-import dataloading as load
 
 # ----------------------------
 # Kapazitätstabelle
@@ -21,13 +21,14 @@ def update_capacity():
 
     :return: None
     """
-    load.get_sql_data('./capa_per_day.sql').to_csv('capa_per_wpg.csv', index=False, encoding='utf-8', sep=';')
+    load.get_sql_data('./data/capa_per_day.sql').to_csv('capa_per_wpg.csv', index=False, encoding='utf-8', sep=';')
 
 
-lookup_capa_per_day = pd.read_csv('./capa_per_wpg.csv', delimiter=';', encoding='UTF-8')
+lookup_capa_per_day = pd.read_csv('./data/capa_per_wpg.csv', delimiter=';', encoding='UTF-8')
 # lookup_capa_per_day = lookup_capa_per_day.set_index('Workplace')['MaxOPCs'].mul(0.8).to_dict()
-lookup_capa_per_day = lookup_capa_per_day.set_index('Workplace')['Q3OPCs'].mul(1.0).to_dict()
-lookup_parallel_per_day = pd.read_csv('./processingslots_per_workplace.csv', delimiter=';', encoding='UTF-8')
+lookup_capa_per_day = lookup_capa_per_day.set_index('Workplace')['MedianOPCs'].mul(1.0).to_dict()
+
+lookup_parallel_per_day = pd.read_csv('./data/processingslots_per_workplace.csv', delimiter=';', encoding='UTF-8')
 lookup_parallel_per_day = lookup_parallel_per_day.set_index('Workplace')['processing_slots'].to_dict()
 
 # load a daily capacity of at least one opc per day
@@ -38,31 +39,19 @@ for key in lookup_capa_per_day.keys():
 # ----------------------------
 # Schichtzeiten
 # ----------------------------
-lookup_schichtzeiten_per_wp = pd.read_csv('./shiftmodell_per_workplace.csv', delimiter=';', encoding='UTF-8')
+lookup_schichtzeiten_per_wp = pd.read_csv('./data/shiftmodell_per_workplace.csv', delimiter=';', encoding='UTF-8')
 lookup_schichtzeiten_per_wp = lookup_schichtzeiten_per_wp.set_index('Workplace').apply(
     lambda row: [row["Morning"], row["Evening"], row["Night"], row["Day"]], axis=1).to_dict()
 
 
 def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartments,
-                          logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',
+                          logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log',
                           steps=168):
     simtime = sim_clock()
-    fig, ax, ax2 = plt.initialize_plot()
+    fig, ax, ax2 = plt.initialize_plot(dispatchdepartments, workplaces)
     with open(logpath, 'a+', encoding='UTF-8') as f:
-        f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
-        f.write('Dispatchlists:\n')
-        for disp in dispatchdepartments.values():
-            f.write(disp.name+'\n')
-            for wp in disp.workplaces:
-                f.write(f'Workplace: {wp.name} has {len(wp.input_wip)} WIP\n')
-                f.write(','.join([str(elem.PA) + ' ' + str(elem.current_step.opcID) + ' ' + str(
-                    round(elem.current_step.TotalActiveTime, 2)) + '/' + str(
-                    round(elem.current_step.PlannedOperationTime, 2)) for elem in wp.input_wip]) + '\n')
-        f.write('\n')
-
         for step in range(steps):
             simtime.tick()
-            plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string())
             with open(logpath, 'a+', encoding='UTF-8') as f:
                 print(f'Step: {step}', simtime.date)
                 f.write(f'Step: {step}, {simtime.date}\n')
@@ -71,27 +60,18 @@ def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartmen
                 # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
                 for disp in dispatchdepartments.values():
                     disp.ship_output_wip(simtime, f)
-    plt.save_plot(fig, './finish.png')
+            plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string(), './plots/' + simtime.string() + '.png')
+    plt.save_plot(fig, './plots/finish.png')
 
 
 def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartments,
-                          logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.txt',steps=21):
+                          logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log',steps=21):
     simtime = sim_clock()
     fig, ax, ax2 = plt.initialize_plot(dispatchdepartments, workplaces)
 
     with open(logpath, 'a+', encoding='UTF-8') as f:
-        f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
-        f.write('Dispatchlists:\n')
-        for disp in dispatchdepartments.values():
-            f.write('Dispatchlists:\n')
-            for wp in disp.workplaces:
-                f.write(f'Workplace: {wp.name} has {len(wp.input_wip)} WIP\n')
-                f.write(','.join([str(elem.PA) + ' ' + str(elem.current_step.opcID) for elem in wp.input_wip]) + '\n')
-        f.write('\n')
-
         for step in range(steps):
             simtime.next_day()
-            plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string())
             with open(logpath, 'a+', encoding='UTF-8') as f:
                 print(f'Step: {step}', simtime.date)
                 f.write(f'Step: {step}, {simtime.date}\n')
@@ -100,12 +80,14 @@ def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartment
                 # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
                 for disp in dispatchdepartments.values():
                     disp.ship_output_wip(simtime, f)
-    plt.save_plot(fig, './finish.png')
+            plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string(), './plots/' + simtime.string() + '.png')
+    plt.save_plot(fig, './plots/finish.png')
 
 
 class sim_clock():
     def __init__(self, date=datetime.today(), hour=datetime.now().hour):
         self.date = date.replace(hour=hour, minute=0, second=0, microsecond=0)
+        self.current_shift= [0,0,0,0]
 
     def next_day(self, delta=1):
         self.date += timedelta(days=delta)
@@ -113,6 +95,19 @@ class sim_clock():
 
     def tick(self, delta=1):
         self.date += timedelta(hours=delta)
+        self.current_shift = self.get_shift()
+
+    def get_shift(self):
+        if self.date.hour < 6:
+            return [1,0,0,0]
+        elif self.date.hour < 8:
+            return [0,1,0,0]
+        elif self.date.hour < 17:
+            return [0,0,1,0]
+        elif self.date.hour < 24:
+            return [0,0,0,1]
+        else:
+            return None
 
     def difference(self, other_date):
         # datetime defines the difference of timestamp(n+1) - timestamp(n) as -1hour, hence the negative sign
@@ -128,9 +123,12 @@ class sim_clock():
 
 
 class Workplace:
-    def __init__(self, name, capa_per_day=None, parallel_processes=None):
+    def __init__(self, name, capa_per_day=None, parallel_processes=None, shifts=None):
         self.name = name
         self.location = None
+        self.input_wip: list[ProductionOrder] = []
+        self.output_wip: list[ProductionOrder] = []
+
         if capa_per_day is None:
             self.load_capa_from_file()
         else:
@@ -139,8 +137,10 @@ class Workplace:
             self.load_parallel_from_file()
         else:
             self.parallel_processes = parallel_processes  # use the floor of capa_per_day
-        self.input_wip: list[ProductionOrder] = []
-        self.output_wip: list[ProductionOrder] = []
+        if shifts is None:
+            self.load_parallel_from_file()
+        else:
+            self.shifts = shifts  # use the floor of capa_per_day
 
     def load_parallel_from_file(self, default=1, mute=True):
         try:
@@ -163,6 +163,20 @@ class Workplace:
                 self.capa_per_day = default
             else:
                 raise e
+
+    def load_shifts_from_file(self, mute=True):
+        try:
+            self.shifts = lookup_schichtzeiten_per_wp[self.name]
+        except KeyError as e:
+            print(f'Could not find {self.name} in lookup_schichtzeiten_per_wp')
+            raise e
+
+    def shift(self, datum):
+        # multiply the shifts with the shift plan of the work place. If they have common shifts, they will be multiplied
+        # if they have different shifts, they will multiply to 0
+        if self.shifts is None:
+            raise KeyError(f'No shifts defined for {self.name}')
+        return sum([elem1*elem2 for elem1,elem2 in zip(self.shifts, datum.current_shift)])
 
 
 class Dispatchdepartment:
@@ -236,11 +250,18 @@ class Dispatchdepartment:
                     pa.FinishedDate = date.date
                     break
                 pa.next_step.workplace.input_wip.append(pa)
-            wp.output_wip = []
+            if not wp.name == 'Abschlussbuchung':
+                wp.output_wip = []
 
     def run_and_ship(self, date=sim_clock()):
         self.run(date)
         self.ship_output_wip(date)
+
+    def calc_AR(self, logfile=None):
+        for wp in self.workplaces:
+            for pa in wp.input_wip:
+                pass
+        #TODO
 
     def get_dispatchlist(self):
         dispatchlist = []
@@ -455,7 +476,11 @@ class OperationCycle:
     def progress(self, sim_date, logfile=None):
         if self.lastchangetimestamp is None:
             self.lastchangetimestamp = sim_date.copy()
-        self.TotalActiveTime += sim_date.difference(self.lastchangetimestamp)
+
+        # Todo input a shift time check, if this wp is even occupied in eg night shift
+        if self.workplace.shift(sim_date):
+            self.TotalActiveTime += sim_date.difference(self.lastchangetimestamp)
+
         if logfile:
             logfile.write('progress ' + ' '.join(
                 ['PA', str(self.PA.PA), 'opc', str(self.opcID), 'workplace', str(self.workplace.name),
@@ -463,9 +488,12 @@ class OperationCycle:
                  str(self.PlannedOperationTime), 'lastchangetimestamp', str(self.lastchangetimestamp.date), 'sim_date',
                  str(sim_date.date), 'difference', str(sim_date.difference(
                     self.lastchangetimestamp)), '\n']))
+
         self.lastchangetimestamp = sim_date.copy()
+
         if self.TotalActiveTime >= self.PlannedOperationTime:
             self.mark_complete()
+
         return
 
     def mark_complete(self, date: sim_clock = sim_clock(), machine=None):
@@ -475,7 +503,7 @@ class OperationCycle:
         self.machine = machine
 
 
-def build_dataset():
+def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log', days_offset=0):
     """
     Loads and processes production orders and operation cycles data from SQL files.
     Creates ProductionOrder and OperationCycle objects and organizes them into collections.
@@ -488,96 +516,139 @@ def build_dataset():
             - opcs_by_PA (dict): Dictionary of OperationCycle objects grouped by PA
     """
     print('Loading data')
-    t0 = timestamp()
+    with open(logpath, 'a+', encoding='UTF-8') as f:
+        f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
+        t0 = timestamp()
+        # get POs as dataframe
+        production_orders_data = load.get_sql_data('./data/load_PO_data.sql')
+        # print('POs loaded:', len(np.unique(production_orders_data[['PA']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
+        # get opcs as dataframe
+        opcs_data = load.get_sql_data('./data/load_opc_data.sql')
+        # print('opcs loaded:', len(np.unique(opcs_data[['opc']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
 
-    # get POs as dataframe
-    production_orders_data = load.get_sql_data('.\\load_PO_data.sql')
-    # print('POs loaded:', len(np.unique(production_orders_data[['PA']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
-    # get opcs as dataframe
-    opcs_data = load.get_sql_data('.\\load_opc_data.sql')
-    # print('opcs loaded:', len(np.unique(opcs_data[['opc']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
+        workplaces_data = np.unique(opcs_data[["WorkPlaceName"]].to_numpy().flatten())
+        dispatchdepartments_data = np.unique(opcs_data[["Dispatchdepartment"]].to_numpy().flatten())
 
-    workplaces_data = np.unique(opcs_data[["WorkPlaceName"]].to_numpy().flatten())
-    dispatchdepartments_data = np.unique(opcs_data[["Dispatchdepartment"]].to_numpy().flatten())
+        dispatchdepartments = {}
+        for dispatchdepartment in dispatchdepartments_data:
+            dispatchdepartments[dispatchdepartment] = Dispatchdepartment(dispatchdepartment)
+        if logpath:
+            f.write(f'Dispatchdepartments loaded: \n' + ','.join([disp.name for disp in dispatchdepartments.values()])+ '\n')
 
-    dispatchdepartments = {}
-    for dispatchdepartment in dispatchdepartments_data:
-        dispatchdepartments[dispatchdepartment] = Dispatchdepartment(dispatchdepartment)
+        workplaces = {}
+        for workplace in workplaces_data:
+            workplaces[workplace] = Workplace(workplace)
 
-    workplaces = {}
-    for workplace in workplaces_data:
-        workplaces[workplace] = Workplace(workplace)
+        f.write(f'Workplaces loaded: \n' + ','.join([wp.name for wp in workplaces.values()]) + '\n')
 
-    opcs = {}
-    opcs_by_PA = {}
-    # generate and group opcs by PA
-    for _, row in opcs_data.iterrows():
-        obj = OperationCycle(*row)
-        opcs[obj.opcID] = obj
-        if row['PA'] not in opcs_by_PA:
-            opcs_by_PA[row['PA']] = [obj]
-        else:
-            opcs_by_PA[row['PA']].append(obj)
+        opcs = {}
+        opcs_by_PA = {}
+        # generate and group opcs by PA
+        for _, row in opcs_data.iterrows():
+            obj = OperationCycle(*row)
+            opcs[obj.opcID] = obj
+            if row['PA'] not in opcs_by_PA:
+                opcs_by_PA[row['PA']] = [obj]
+                # if logpath:
+                #     f.write(f'PA {row["PA"]} created new and appended opc {obj.opcID}\n')
+            else:
+                opcs_by_PA[row['PA']].append(obj)
+                # if logpath:
+                #     f.write(f'PA {row["PA"]} appended opc {obj.opcID}\n')
 
-    # generate all PA, reference opcs
-    production_orders = {}
-    for _, row in production_orders_data.iterrows():
-        try:
-            production_orders[row['PA']] = ProductionOrder(*row, operationcycles=opcs_by_PA[row['PA']])
-        except KeyError as e:
-            print(f'Could not find {row["PA"]} in opcs_by_PA')
-            print(e)
-            continue
-        except Exception as e:
-            print(f'Could not create ProductionOrder for {row["PA"]}')
-            print(row)
-            print(e)
-            continue
+        # generate all PA, reference opcs
+        production_orders = {}
+        for _, row in production_orders_data.iterrows():
+            try:
+                production_orders[row['PA']] = ProductionOrder(*row, operationcycles=opcs_by_PA[row['PA']])
+                if logpath:
+                    f.write(f'PA {row["PA"]} added ' + ','.join([str(elem) for elem in row]) + '\n')
+            except KeyError as e:
+                print(f'Could not find {row["PA"]} in opcs_by_PA')
+                print(e)
+                continue
+            except Exception as e:
+                print(f'Could not create ProductionOrder for {row["PA"]}')
+                print(row)
+                print(e)
+                continue
 
-    for pa in production_orders.keys():
-        for opc in production_orders[pa].operationcycles:
-            opc.next_step = production_orders[pa].operationcycles[
-                production_orders[pa].operationcycles.index(opc) + 1] if production_orders[pa].operationcycles.index(
-                opc) + 1 < len(production_orders[pa].operationcycles) else None
+        for pa in production_orders.keys():
+            for opc in production_orders[pa].operationcycles:
+                opc.next_step = production_orders[pa].operationcycles[
+                    production_orders[pa].operationcycles.index(opc) + 1] if production_orders[pa].operationcycles.index(
+                    opc) + 1 < len(production_orders[pa].operationcycles) else None
+                if logpath:
+                    f.write(f'opc {opc.opcID} next_step {opc.next_step.opcID if opc.next_step else None} PA {opc.PA} current workplace {opc.workplace}\n')
 
-    for opc in opcs.values():
-        try:
-            opc.PA = production_orders[opc.PA]
-        except KeyError as e:
-            print(f'Could not find {opc.PA} in production_orders')
-            print(e)
-            continue
-        try:
-            opc.workplace = workplaces[opc.workplace]
-        except KeyError as e:
-            print(f'Could not find {opc.workplace} in workplaces')
-            print(e)
-            continue
-        try:
-            opc.dispatchdepartment = dispatchdepartments[opc.dispatchdepartment]
-        except KeyError as e:
-            print(f'Could not find {opc.dispatchdepartment} in dispatchdepartments')
-            print(e)
-            continue
+        for opc in opcs.values():
+            try:
+                opc.PA = production_orders[opc.PA]
+            except KeyError as e:
+                print(f'Could not find {opc.PA} in production_orders')
+                print(e)
+                continue
+            try:
+                opc.workplace = workplaces[opc.workplace]
+            except KeyError as e:
+                print(f'Could not find {opc.workplace} in workplaces')
+                print(e)
+                continue
+            try:
+                opc.dispatchdepartment = dispatchdepartments[opc.dispatchdepartment]
+            except KeyError as e:
+                print(f'Could not find {opc.dispatchdepartment} in dispatchdepartments')
+                print(e)
+                continue
 
-    # create a mapping of dispatchdepartments and workplaces from opcs
-    for opc in opcs.values():
-        if opc.workplace and opc.dispatchdepartment and opc.workplace not in opc.dispatchdepartment.workplaces:
-            opc.dispatchdepartment.workplaces.append(opc.workplace)
+        # create a mapping of dispatchdepartments and workplaces from opcs
+        for opc in opcs.values():
+            if opc.workplace and opc.dispatchdepartment and opc.workplace not in opc.dispatchdepartment.workplaces:
+                opc.dispatchdepartment.workplaces.append(opc.workplace)
 
-    # find active opc_id
-    for pa in production_orders.keys():
-        if production_orders[pa].FinishedDate:  # skip all the finished PAs
-            continue
-        opcs_of_PA = opcs_by_PA[pa]
-        for opc in reversed(opcs_of_PA):  # go from the end of the list to prevent starting on a skipped opc
-            if opc.opc_state != 0:
-                production_orders[pa].current_step = opc
-                production_orders[pa].next_step = opc.next_step
-                break
-        if production_orders[pa].current_step:
-            if production_orders[pa].current_step.workplace:
-                production_orders[pa].current_step.workplace.input_wip.append(production_orders[pa])
+        # find active opc_id
+        for pa in production_orders.keys():
+            if production_orders[pa].FinishedDate: # TODO or production_orders[pa].isFinished:  # skip all the finished PAs
+                continue
+            opcs_of_PA = opcs_by_PA[pa]
+            for opc in reversed(opcs_of_PA):  # go from the end of the list to prevent starting on a skipped opc
+                if opc.opc_state != 0:
+                    production_orders[pa].current_step = opc
+                    production_orders[pa].next_step = opc.next_step
+                    break
+            # what if there is no first opc, what if they are not started yet. Then just use the first opc in the list
+            if production_orders[pa].current_step is None:
+                production_orders[pa].current_step = opcs_of_PA[0]
+                production_orders[pa].next_step = opcs_of_PA[0].next_step
+            # if logpath:
+            #     f.write(f'PA {pa} has {len(production_orders[pa].operationcycles)} opcs, active opc is {production_orders[pa].current_step.opcID}\n')
+            if production_orders[pa].current_step:
+                if production_orders[pa].current_step.workplace:
+                    if production_orders[pa].current_step.opc_state == 3:
+                        # if the current step is worked on/done, shift immediately to the next step
+                        if production_orders[pa].next_step:
+                            # after the PAs are initialized at their current step, some have to be shipped to the next workplace, if it exists
+                            production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
+                        else:
+                            production_orders[pa].current_step.workplace.output_wip.append(production_orders[pa])
+                        if logpath:
+                            f.write(f'{pa} {production_orders[pa].current_step.opcID} appended to output wip of {production_orders[pa].current_step.workplace.name}\n')
+                    else:
+                        production_orders[pa].current_step.workplace.input_wip.append(production_orders[pa])
+                        if logpath:
+                            f.write(f'{pa} {production_orders[pa].current_step.opcID} appended to input wip of {production_orders[pa].current_step.workplace.name}\n')
+            else:
+                if logpath:
+                    f.write(f'PA {pa} has no active opc')
+                print(f'PA {pa} has no active opc')
+
+        f.write('Dispatchlists:\n')
+        for disp in dispatchdepartments.values():
+            f.write(disp.name + ':\n')
+            for wp in disp.workplaces:
+                f.write(f'Workplace: {wp.name} has {len(wp.input_wip)} WIP\n')
+                f.write(','.join([str(elem.PA) + ' ' + str(elem.current_step.opcID) for elem in wp.input_wip]) + '\n')
+        f.write('\n')
 
     print(f'Loading time elapsed: {timestamp() - t0}')
     return production_orders, opcs, workplaces, dispatchdepartments, opcs_by_PA

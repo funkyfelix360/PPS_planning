@@ -1,5 +1,6 @@
 /data
 /logs
+/plots
 capa_per_wpg.csv
 dataloading.py
 load_PO_data.sql
@@ -11,5 +12,5 @@ templates/index.html
 update_workplaces_parameters.py
 processingslots_per_workplace.csv
 finish.png
-start.png
+plots/start.png
 test.txt

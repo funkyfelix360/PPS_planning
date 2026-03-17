@@ -18,10 +18,10 @@ def initialize_plot(dispatchdepartments, workplaces):
     ax2.bar(['fertig'], [len(workplaces[wp].output_wip) for wp in workplaces.keys() if wp == 'Abschlussbuchung'])
     plt.tight_layout(pad=2)
     plt.pause(0.001)
-    plt.savefig('start.png')
+    plt.savefig('./plots/start.png')
     return fig, ax, ax2
 
-def update_plot(fig, ax, ax2, dispatchdepartments, workplaces, title=''):
+def update_plot(fig, ax, ax2, dispatchdepartments, workplaces, title='', filename=''):
     names = [dispatchdepartments[disp].name for disp in dispatchdepartments.keys()]
     heights = [sum(len(workplaces[wp.name].input_wip) for wp in dispatchdepartments[disp].workplaces) for disp in dispatchdepartments.keys()]
     ax.cla()
@@ -38,6 +38,8 @@ def update_plot(fig, ax, ax2, dispatchdepartments, workplaces, title=''):
     fig.suptitle(title)
     plt.draw()
     plt.pause(0.001)
+    fig.savefig(filename)
+
 
 def save_plot(fig, filename):
     fig.savefig(filename)
