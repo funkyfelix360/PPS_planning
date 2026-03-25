@@ -105,7 +105,6 @@ def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartment
 
     plt.save_plot(fig, './plots/finish.png')
 
-
 class sim_clock():
     def __init__(self, date=datetime.today(), hour=datetime.now().hour):
         self.date = date.replace(hour=hour, minute=0, second=0, microsecond=0)

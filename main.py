@@ -1,3 +1,4 @@
+import os
 from time import sleep
 from datetime import datetime
 import matplotlib; matplotlib.use("TkAgg")
@@ -9,9 +10,12 @@ import dataloading as load
 
 if __name__ == '__main__':
     # start with getting the data set from sql
+
     days_offset = 14
+    for directory in ['./data', './logs', './plots']:
+        os.makedirs(directory, exist_ok=True)
     production_orders, opcs, workplaces, dispatchdepartments, opcs_by_PA = pps.build_dataset(days_offset=days_offset,
                                                                                              opcs_data=load.get_data('./data/opcs.csv'),
-                                                                                             production_orders_data=load.get_data('./data/production_orders.csv')
-                                                                                             ,mute=False)
+                                                                                             production_orders_data=load.get_data('./data/production_orders.csv'),
+                                                                                             mute=False)
     pps.day_based_simulation(production_orders, opcs, workplaces, dispatchdepartments, days_offset=days_offset)
