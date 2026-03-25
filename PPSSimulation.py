@@ -7,12 +7,8 @@ import pandas as pd
 import dataloading as load
 import plotting as plt
 
+secret_path = 'P:/Public/Laufende_Projekte_kein_invest/2026 PPS Planung/Programmierung/data/'
 
-# ----------------------------
-# Kapazitätstabelle
-# Einheit = Aufträge pro Tag
-# 80% von max. Kapazität
-# ----------------------------
 def update_capacity():
     """
     Updates the capacity data by retrieving it using SQL queries and saving it
@@ -21,14 +17,21 @@ def update_capacity():
 
     :return: None
     """
-    load.get_sql_data('./data/capa_per_day.sql').to_csv('capa_per_wpg.csv', index=False, encoding='utf-8', sep=';')
+    load.get_sql_data(secret_path + 'capa_per_day.sql').to_csv(secret_path + 'capa_per_wpg.csv', index=False, encoding='utf-8', sep=';')
 
 
-lookup_capa_per_day = pd.read_csv('./data/capa_per_wpg.csv', delimiter=';', encoding='UTF-8')
+# ----------------------------
+# Capacity
+# ----------------------------
+lookup_capa_per_day = pd.read_csv(secret_path + 'capa_per_wpg.csv', delimiter=';', encoding='UTF-8')
 # lookup_capa_per_day = lookup_capa_per_day.set_index('Workplace')['MaxOPCs'].mul(0.8).to_dict()
 lookup_capa_per_day = lookup_capa_per_day.set_index('Workplace')['MedianOPCs'].mul(1.0).to_dict()
 
-lookup_parallel_per_day = pd.read_csv('./data/processingslots_per_workplace.csv', delimiter=';', encoding='UTF-8')
+# ----------------------------
+# Parallele Maschinen
+# ----------------------------
+
+lookup_parallel_per_day = pd.read_csv(secret_path + 'processingslots_per_workplace.csv', delimiter=';', encoding='UTF-8')
 lookup_parallel_per_day = lookup_parallel_per_day.set_index('Workplace')['processing_slots'].to_dict()
 
 # load a daily capacity of at least one opc per day
@@ -39,7 +42,7 @@ for key in lookup_capa_per_day.keys():
 # ----------------------------
 # Schichtzeiten
 # ----------------------------
-lookup_schichtzeiten_per_wp = pd.read_csv('./data/shiftmodell_per_workplace.csv', delimiter=';')
+lookup_schichtzeiten_per_wp = pd.read_csv(secret_path + 'shiftmodell_per_workplace.csv', delimiter=';')
 lookup_schichtzeiten_per_wp = lookup_schichtzeiten_per_wp.set_index('Workplace').apply(
     lambda row: [row["Night"], row["Morning"], row["Day"] , row["Evening"]], axis=1).to_dict()
 
@@ -53,19 +56,18 @@ def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartmen
     with open(logpath, 'a+', encoding='UTF-8') as f:
         for step in range(steps):
             simtime.tick()
-            with open(logpath, 'a+', encoding='UTF-8') as f:
-                print(f'Step: {step}', simtime.date)
-                f.write(f'Step: {step}, {simtime.date}\n')
-                f.write(f'Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
-                for disp in dispatchdepartments.values():
-                    f.write(f'{disp.name} Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
-                    for wp in disp.workplaces:
-                        f.write(f'{wp.name} {wp.input_wip}\n')
-                    f.write('\n')
-                    disp.run(simtime, f)
-                # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
-                for disp in dispatchdepartments.values():
-                    disp.ship_output_wip(simtime, f)
+            print(f'Step: {step}', simtime.date)
+            f.write(f'Step: {step}, {simtime.date}\n')
+            f.write(f'Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
+            for disp in dispatchdepartments.values():
+                f.write(f'{disp.name} Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
+                for wp in disp.workplaces:
+                    f.write(f'{wp.name} {wp.input_wip}\n')
+                f.write('\n')
+                disp.run(simtime, f)
+            # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
+            for disp in dispatchdepartments.values():
+                disp.ship_output_wip(simtime, f)
             plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string(), './plots/' + simtime.string() + '.png')
     plt.save_plot(fig, './plots/finish.png')
 
@@ -286,9 +288,17 @@ class Dispatchdepartment:
             if len(wp.output_wip) < 1:
                 continue
             for pa in wp.output_wip:
+                # mark current step as finished
+                pa.current_step.opc_state = 3
+                pa.current_step.opc_endtimestamp = date.date
+                # fetch next step
                 if pa.next_step is None:
                     pa.FinishedDate = date.date
                     continue
+                pa.current_step = pa.next_step
+                # fetch 2nd next step
+                if pa.next_step.next_step:
+                    pa.next_step = pa.next_step.next_step
                 pa.next_step.workplace.input_wip.append(pa)
             if not wp.name == 'Abschlussbuchung':
                 wp.output_wip = []
@@ -368,9 +378,9 @@ class ProductionOrder:
         """
         self.operationcycles = operationcycles
         self.current_step: OperationCycle = current_step
-        self.current_dispatchdep = current_dispatchdep
+        # self.current_dispatchdep = current_dispatchdep
         self.next_step = next_step
-        self.next_dispatchdep = next_dispatchdep
+        # self.next_dispatchdep = next_dispatchdep
         self.age = age
         self.PA = PA
         self.ProductNumber = ProductNumber
@@ -557,16 +567,16 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
             - opcs_by_PA (dict): Dictionary of OperationCycle objects grouped by PA
     """
     print('Loading data')
-    with open(logpath, 'a+', encoding='UTF-8') as f:
+    with (open(logpath, 'a+', encoding='UTF-8') as f):
         f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
         t0 = timestamp()
         # get POs as dataframe
         if production_orders_data is None:
-            production_orders_data = load.get_sql_data('./data/load_PO_data.sql', args={'days_offset': days_offset})
+            production_orders_data = load.get_sql_data(secret_path + 'load_PO_data.sql', args={'days_offset': days_offset})
         # print('POs loaded:', len(np.unique(production_orders_data[['PA']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
         # get opcs as dataframe
         if opcs_data is None:
-            opcs_data = load.get_sql_data('./data/load_opc_data.sql', args={'days_offset': days_offset})
+            opcs_data = load.get_sql_data(secret_path + 'load_opc_data.sql', args={'days_offset': days_offset})
         # print('opcs loaded:', len(np.unique(opcs_data[['opc']].to_numpy().flatten())),'\n', np.unique(production_orders_data[['PA']].to_numpy().flatten()))
 
         workplaces_data = np.unique(opcs_data[["WorkPlaceName"]].to_numpy().flatten())
@@ -586,23 +596,36 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
 
         opcs = {}
         opcs_by_PA = {}
+
         # generate and group opcs by PA
         for _, row in opcs_data.iterrows():
             obj = OperationCycle(*row)
             # if there is an endtimestamp, convert it to a datetime object, drop the microseconds
             if obj.opc_endtimestamp:
-                if not isinstance(obj.opc_endtimestamp, str):
-                    raise TypeError(f'{obj.opcID} opc_endtimestamp is not a string: {type(obj.opc_endtimestamp)}')
-                obj.opc_endtimestamp = datetime.strptime(obj.opc_endtimestamp.split('.')[0], "%Y-%m-%d %H:%M:%S")
+                if isinstance(obj.opc_endtimestamp, str):
+                    #Todo handle excepts
+                    try:
+                        obj.opc_endtimestamp = datetime.strptime(obj.opc_endtimestamp, "%Y-%m-%d %H:%M:%S")
+                    except:
+                        pass
+                    try: # maybe the timestamp is in the format "2023-03-22 12:00:00.000000" with a dot
+                        obj.opc_endtimestamp = datetime.strptime(obj.opc_endtimestamp.split('.')[0], "%Y-%m-%d %H:%M:%S")
+                    except:
+                        pass
+                elif isinstance(obj.opc_endtimestamp, datetime):
+                    pass
+                else:
+                    raise ValueError(f'opc_endtimestamp is neither a string nor a datetime object: {obj.opc_endtimestamp}, {type(obj.opc_endtimestamp)}')
             opcs[obj.opcID] = obj
             if row['PA'] not in opcs_by_PA:
                 opcs_by_PA[row['PA']] = [obj]
-                # if logpath:
-                #     f.write(f'PA {row["PA"]} created new and appended opc {obj.opcID}\n')
+                if logpath and not mute:
+                    f.write(f'PA {row["PA"]} created new and appended opc {obj.opcID}\n')
             else:
                 opcs_by_PA[row['PA']].append(obj)
-                # if logpath:
-                #     f.write(f'PA {row["PA"]} appended opc {obj.opcID}\n')
+                if logpath and not mute:
+                    f.write(f'PA {row["PA"]} appended opc {obj.opcID}\n')
+
 
         # generate all PA, reference opcs
         production_orders = {}
@@ -657,8 +680,9 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
 
         # find active opc_id
         for pa in production_orders.keys():
-            # if production_orders[pa].FinishedDate:
-            #     continue
+            if production_orders[pa].FinishedDate:
+                if production_orders[pa].FinishedDate <datetime.now() - timedelta(days=days_offset):
+                    continue
             opcs_of_PA = opcs_by_PA[pa]
             for opc in reversed(opcs_of_PA):  # go from the end of the list to prevent starting on a skipped opc
                 if opc.opc_endtimestamp:
@@ -666,19 +690,32 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
                         production_orders[pa].current_step = opc
                         production_orders[pa].next_step = opc.next_step
                         break
+                    # else simply continue with next opc
             # What if there is no first opc, what if they are not started yet. Then just use the first opc in the list
             if production_orders[pa].current_step is None:
                 production_orders[pa].current_step = opcs_of_PA[0]
                 production_orders[pa].next_step = opcs_of_PA[0].next_step
-            # if logpath:
-            #     f.write(f'PA {pa} has {len(production_orders[pa].operationcycles)} opcs, active opc is {production_orders[pa].current_step.opcID}\n')
+            if logpath and not mute:
+                f.write(f'PA {pa} has {len(production_orders[pa].operationcycles)} opcs, active opc is {production_orders[pa].current_step.opcID}\n')
+
+            # should have found a current_step by now, else PA is already finished
             if production_orders[pa].current_step:
-                if production_orders[pa].current_step.workplace:
-                    if production_orders[pa].current_step.opc_state == 3: # and production_orders[pa].current_step.opc_endtimestamp < datetime.now() - timedelta(days=days_offset):
-                        # if the current step is worked on/done, shift immediately to the next step
+                #first find if all the parameters are set
+                if production_orders[pa].current_step.workplace and production_orders[pa].current_step.opc_state and production_orders[pa].current_step.opc_endtimestamp:
+                    # if the current step is worked on/done, shift immediately to the next step
+                    if production_orders[pa].current_step.opc_state == 3 and production_orders[pa].current_step.opc_endtimestamp < datetime.now() - timedelta(days=days_offset):
+                        # if the current step is done, try to append to input of next step, if next_step exists
                         if production_orders[pa].next_step:
                             # after the PAs are initialized at their current step, some have to be shipped to the next workplace, if it exists
-                            production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
+                            try: # Todo hier ist irgendein Fehler mit dem Workplace verknüpfung
+                                production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
+                            except:
+                                print('PA:', pa, production_orders[pa].current_step.workplace.name)
+                                print(production_orders[pa].current_step.workplace, production_orders[
+                                    pa].current_step.workplace.name)
+                                print(production_orders[pa].next_step.workplace)
+                                raise Exception
+                            print('geht')
                         else:
                             production_orders[pa].current_step.workplace.output_wip.append(production_orders[pa])
                         if logpath and not mute:
