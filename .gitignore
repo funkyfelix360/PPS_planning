@@ -1,1 +1,16 @@
 /data
+/logs
+/plots
+capa_per_wpg.csv
+dataloading.py
+load_PO_data.sql
+load_opc_data.sql
+capa_per_day.sql
+shiftmodell_per_workplace.csv
+test.py
+templates/index.html
+update_workplaces_parameters.py
+processingslots_per_workplace.csv
+finish.png
+plots/start.png
+test.txt
