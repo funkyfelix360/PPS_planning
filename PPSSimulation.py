@@ -77,18 +77,13 @@ def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartment
                          days_offset=0):
     simtime = sim_clock()
     simtime.date = simtime.date - timedelta(days=days_offset)
-    fig, ax, ax2, ax_table = plt.initialize_plot(dispatchdepartments, workplaces)
-    saturations = {}
+    fig, ax, ax2, ax_table, saturations = plt.initialize_plot(dispatchdepartments, workplaces, simtime)
 
     with open(logpath, 'a+', encoding='UTF-8') as f:
         for step in range(steps):
             simtime.next_day()
             print(f'Step: {step}', simtime.date)
             f.write(f'Step: {step}, {simtime.date}\n')
-
-            if simtime.weekday()==0:
-                print('Montag')
-                plt.plot_saturation(dispatchdepartments, saturations, simtime, fig, ax_table)
 
             print(f'Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
             f.write(f'Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
@@ -102,8 +97,9 @@ def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartment
             # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
             for disp in dispatchdepartments.values():
                 disp.ship_output_wip(simtime, f)
-            saturations = plt.plot_saturation(dispatchdepartments, saturations, simtime, fig, ax_table)
-            plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string(), f'./plots/{step+1}.png')
+
+            print('sats', saturations, type(saturations))
+            saturations = plt.update_plot(fig, ax, ax2, ax_table, dispatchdepartments, workplaces, saturations, simtime, simtime.string(), f'./plots/{step+1}.png')
 
     plt.save_plot(fig, './plots/finish.png')
 
@@ -273,11 +269,18 @@ class Dispatchdepartment:
 
             # if there are less pa in the Workplace than they can process, thenprocess all
             if len(wp.input_wip)<wp.capa_per_day:
-                wp.output_wip = list(wp.input_wip)
+                if wp.name == 'Abschlussbuchung':
+                    # do not override the Abschlussbuchung wip Output, so we have all finished PA in Abschlussbuchung WIP Output
+                    wp.output_wip += wp.input_wip[:]
+                else:
+                    wp.output_wip = wp.input_wip[:]
                 wp.input_wip = []
             else:
-                # Convert up to capa_per_day items from input to output
-                wp.output_wip = wp.input_wip[:wp.capa_per_day]
+                if wp.name == 'Abschlussbuchung':
+                    wp.output_wip += wp.input_wip[:wp.capa_per_day]
+                else:
+                    # Convert up to capa_per_day items from input to output
+                    wp.output_wip = wp.input_wip[:wp.capa_per_day]
                 wp.input_wip = wp.input_wip[wp.capa_per_day:]
             if logfile:
                 logfile.write(f'{wp.name} has {len(wp.output_wip)} finished PAs\n')
@@ -707,7 +710,7 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
                         # if the current step is done, try to append to input of next step, if next_step exists
                         if production_orders[pa].next_step:
                             # after the PAs are initialized at their current step, some have to be shipped to the next workplace, if it exists
-                            try: # Todo hier ist irgendein Fehler mit dem Workplace verknüpfung
+                            try:
                                 production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
                             except:
                                 print('PA:', pa, production_orders[pa].current_step.workplace.name)
@@ -715,7 +718,6 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
                                     pa].current_step.workplace.name)
                                 print(production_orders[pa].next_step.workplace)
                                 raise Exception
-                            print('geht')
                         else:
                             production_orders[pa].current_step.workplace.output_wip.append(production_orders[pa])
                         if logpath and not mute:
