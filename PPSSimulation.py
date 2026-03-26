@@ -52,7 +52,7 @@ def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartmen
                           steps=168, days_offset=0):
     simtime = sim_clock()
     simtime.date = simtime.date - timedelta(days=days_offset)
-    fig, ax, ax2 = plt.initialize_plot(dispatchdepartments, workplaces)
+    fig, ax, ax2, ax_table, saturations = plt.initialize_plot(dispatchdepartments, workplaces, simtime)
     with open(logpath, 'a+', encoding='UTF-8') as f:
         for step in range(steps):
             simtime.tick()
@@ -68,7 +68,7 @@ def time_based_simulation(production_orders, opcs, workplaces, dispatchdepartmen
             # first process all wps, then ship them. Else process A, shipping to B then processing B results in PAs jumping multiple times in a sim day
             for disp in dispatchdepartments.values():
                 disp.ship_output_wip(simtime, f)
-            plt.update_plot(fig, ax, ax2, dispatchdepartments, workplaces, simtime.string(), './plots/' + simtime.string() + '.png')
+            plt.update_plot(fig, ax, ax2, ax_table, dispatchdepartments, workplaces, saturations, simtime, simtime.string(), './plots/' + simtime.string() + '.png')
     plt.save_plot(fig, './plots/finish.png')
 
 
@@ -324,31 +324,46 @@ class Dispatchdepartment:
 
 class ProductionOrder:
     """
-    Represents a production order in the manufacturing system.
+    Represents a production order with all its specifications, details, and
+    associated information related to manufacturing processes.
 
-    Attributes:
-        operationcycles (list): List of operation cycles associated with this order
-        current_step (int): Current production step number
-        current_dispatchdep (str): Current dispatch department
-        next_step (int): Next production step number
-        next_dispatchdep (str): Next dispatch department
-        age (int): Age of the production order
-        PA (str): Production order number
-        ProductNumber (str): Product number identifier
-        ProductVersion (str): Version of the product
-        ProductRevision (str): Revision of the product
-        PlanNumber (str): Planning number
-        PhasenCode (str): Phase code
-        PiecesPerBoard (int): Number of pieces per board
-        TargetAmount (int): Target production amount
-        Customer (str): Customer identifier
-        StartDate (datetime): Start date of production
-        FinishedDate (datetime): Completion date
-        PPSAdminDate (datetime): PPS administration date
-        SapOrderType (str): SAP order type
-        IsDeleted (bool): Deletion status
-        DeliveryForecastPpsDate (datetime): Forecast delivery date
-        DeliveryCriticalityPpsBool (bool): Delivery criticality flag
+    This class is designed to encapsulate all relevant data for production
+    orders, including product details, manufacturing specifics, delivery
+    deadlines, and order status.
+
+    :ivar PA: Production area identifier.
+    :ivar ProductNumber: Identifier for the product associated with the
+        production order.
+    :ivar ProductVersion: Version of the product.
+    :ivar ProductRevision: Revision of the product.
+    :ivar PlanNumber: The plan number related to the production process.
+    :ivar PhasenCode: Code that identifies the manufacturing phase.
+    :ivar PiecesPerBoard: Number of pieces per board produced.
+    :ivar TargetAmount: Total amount of product to be produced.
+    :ivar Customer: Customer associated with the production order.
+    :ivar StartDate: Start date of the production.
+    :ivar FinishedDate: Date when production was completed.
+    :ivar PPSAdminDate: Date assigned for administrative purposes by the PPS
+        system.
+    :ivar SapOrderType: SAP order type linked to this production order.
+    :ivar IsDeleted: A boolean indicator specifying if the production order is
+        marked as deleted.
+    :ivar DeliveryForecastPpsDate: Forecasted delivery date as per PPS system.
+    :ivar DeliveryCriticalityPpsBool: Indicator to mark if the order has
+        delivery criticality in the PPS system.
+    :ivar operationcycles: List of cycles representing various operations in
+        the production process.
+    :ivar current_step: Represents the current operation cycle or step within
+        the production process.
+    :type current_step: OperationCycle
+    :ivar current_dispatchdep: Current dispatch dependency, indicating the
+        dispatch-related state.
+    :ivar next_step: Represents the next operation cycle or step to be
+        executed in the production process.
+    :ivar next_dispatchdep: Next dispatch dependency, indicating the state
+        after a subsequent dispatch.
+    :ivar age: Duration or age representing the order's operational or time
+        status.
     """
 
     def __init__(self,
