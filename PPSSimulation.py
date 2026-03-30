@@ -378,7 +378,12 @@ class ProductionOrder:
                  TargetAmount=None,
                  Customer=None,
                  StartDate=None,
+                 FirstBooking = None,
+                 FirstopcID = None,
                  FinishedDate=None,
+                 LastopcID = None,
+                 LastBooking = None,
+                 ARDeltaPPS = None,
                  PPSAdminDate=None,
                  SapOrderType=None,
                  IsDeleted=None,
@@ -411,7 +416,12 @@ class ProductionOrder:
         self.TargetAmount = TargetAmount
         self.Customer = Customer
         self.StartDate = StartDate
+        self.FirstBooking = FirstBooking
+        self.FirstopcID = FirstopcID
         self.FinishedDate = FinishedDate
+        self.LastBooking = LastBooking
+        self.LastopcID = LastopcID
+        self.ARDelta = ARDeltaPPS
         self.PPSAdminDate = PPSAdminDate
         self.SapOrderType = SapOrderType
         self.IsDeleted = IsDeleted
@@ -586,7 +596,7 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
             - opcs_by_PA (dict): Dictionary of OperationCycle objects grouped by PA
     """
     print('Loading data')
-    with open(logpath, 'a+', encoding='UTF-8') as f:
+    with (open(logpath, 'a+', encoding='UTF-8') as f):
         f.write(f'Logfile for {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}\n')
         t0 = timestamp()
         # get POs as dataframe
@@ -615,10 +625,12 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
             if not row['opcID'] in opcs:
                 # in case there are double entries, choose only the first row
                 obj = OperationCycle(*row)
+                opcs[obj.opcID] = obj
             else:
                 print('There is a double entry in the opcs data, skipping this row')
                 print(*row)
                 continue
+
             # if there is an endtimestamp, convert it to a datetime object, drop the microseconds
             if obj.opc_endtimestamp:
                 if isinstance(obj.opc_endtimestamp, str):
@@ -634,39 +646,37 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
                     pass
                 else:
                     raise ValueError(f'opc_endtimestamp is neither a string nor a datetime object: {obj.opc_endtimestamp}, {type(obj.opc_endtimestamp)}')
-
-                opcs[obj.opcID] = obj
-            if row['PA'] not in opcs_by_PA:
-                opcs_by_PA[row['PA']] = [obj]
+            # append the opc to some PA
+            if obj.PA not in opcs_by_PA:
+                opcs_by_PA[obj.PA] = [obj]
                 if logpath and not mute:
-                    f.write(f'PA {row["PA"]} created new and appended opc {obj.opcID}\n')
+                    f.write(f'PA {obj.PA} created new and appended opc {obj.opcID}\n')
             else:
-                opcs_by_PA[row['PA']].append(obj)
+                opcs_by_PA[obj.PA].append(obj)
                 if logpath and not mute:
-                    f.write(f'PA {row["PA"]} appended opc {obj.opcID}\n')
+                    f.write(f'PA {obj.PA} appended opc {obj.opcID}\n')
 
-        # generate all PA, reference opcs
+        # generate all PAs, reference opcs
         production_orders = {}
         for _, row in production_orders_data.iterrows():
             try:
-                production_orders[row['PA']] = ProductionOrder(*row, operationcycles=opcs_by_PA[row['PA']])
+                obj = ProductionOrder(*row, operationcycles=opcs_by_PA[row['PA']])
+                production_orders[obj.PA] = obj
                 if logpath and not mute:
-                    f.write(f'PA {row["PA"]} added ' + ','.join([str(elem) for elem in row]) + '\n')
+                    f.write(f'PA {obj.PA} added ' + ','.join([str(elem) for elem in row]) + '\n')
             except KeyError as e:
-                print(f'Could not find {row["PA"]} in opcs_by_PA')
+                print(f'Could not find {obj.PA} in opcs_by_PA')
                 print(e)
                 continue
             except Exception as e:
-                print(f'Could not create ProductionOrder for {row["PA"]}')
+                print(f'Could not create ProductionOrder for {obj.PA}')
                 print(row)
                 print(e)
                 continue
 
-        for pa in production_orders.keys():
-            for opc in production_orders[pa].operationcycles:
-                opc.next_step = production_orders[pa].operationcycles[
-                    production_orders[pa].operationcycles.index(opc) + 1] if production_orders[pa].operationcycles.index(
-                    opc) + 1 < len(production_orders[pa].operationcycles) else None
+            for opc in obj.operationcycles:
+                opc.next_step = obj.operationcycles[obj.operationcycles.index(opc) + 1] \
+                        if obj.operationcycles.index(opc) + 1 < len(obj.operationcycles) else None
                 if logpath and not mute:
                     f.write(f'opc {opc.opcID} next_step {opc.next_step.opcID if opc.next_step else None} PA {opc.PA} current workplace {opc.workplace}\n')
 
@@ -690,25 +700,32 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
                 print(f'Could not find {opc.dispatchdepartment} in dispatchdepartments')
                 print(e)
                 continue
-
-        # create a mapping of dispatchdepartments and workplaces from opcs
-        for opc in opcs.values():
+            # create a mapping of dispatchdepartments and workplaces from opcs
             if opc.workplace and opc.dispatchdepartment and opc.workplace not in opc.dispatchdepartment.workplaces:
                 opc.dispatchdepartment.workplaces.append(opc.workplace)
 
-        # find active opc_id
+        # find active opc_id TODO with last booked opcID
         for pa in production_orders.keys():
             if production_orders[pa].FinishedDate:
                 if production_orders[pa].FinishedDate <datetime.now() - timedelta(days=days_offset):
                     continue
             opcs_of_PA = opcs_by_PA[pa]
-            for opc in reversed(opcs_of_PA):  # go from the end of the list to prevent starting on a skipped opc
-                if opc.opc_endtimestamp:
-                    if opc.opc_endtimestamp < datetime.now() - timedelta(days=days_offset):
-                        production_orders[pa].current_step = opc
-                        production_orders[pa].next_step = opc.next_step
-                        continue
-                    # else simply continue with next opc
+
+            # for opc in reversed(opcs_of_PA):
+            #     # go from the end of the list to prevent starting on a skipped opc
+            #     if opc.opc_endtimestamp:
+            #         # else simply continue with next opc
+            #         if opc.opc_endtimestamp < datetime.now() - timedelta(days=days_offset):
+            #             production_orders[pa].current_step = opc
+            #             production_orders[pa].next_step = opc.next_step
+            #             break
+            #         else:
+            #             continue
+
+            if production_orders[pa].LastopcID:
+                production_orders[pa].current_step = opcs[production_orders[pa].LastopcID]
+                production_orders[pa].next_step = opcs[production_orders[pa].LastopcID].next_step
+
             # What if there is no first opc, what if they are not started yet. Then just use the first opc in the list
             if production_orders[pa].current_step is None:
                 production_orders[pa].current_step = opcs_of_PA[0]
@@ -719,31 +736,22 @@ def build_dataset(logpath=f'./logs/log{datetime.now().strftime("%Y-%m-%d_%H-%M-%
             # should have found a current_step by now, else PA is already finished
             if production_orders[pa].current_step:
                 #first find if all the parameters are set
-                if production_orders[pa].current_step.workplace and production_orders[pa].current_step.opc_state and production_orders[pa].current_step.opc_endtimestamp:
-                    # if the current step is worked on/done, shift immediately to the next step
-                    if production_orders[pa].current_step.opc_state == 3 and production_orders[pa].current_step.opc_endtimestamp < datetime.now() - timedelta(days=days_offset):
-                        # if the current step is done, try to append to input of next step, if next_step exists
-                        if production_orders[pa].next_step:
-                            # after the PAs are initialized at their current step, some have to be shipped to the next workplace, if it exists
-                            # production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
-
-                            try:
-                                production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
-                            except Exception as e:
-                                print('PA:', pa, production_orders[pa].current_step.workplace.name)
-                                print(production_orders[pa].current_step.workplace, production_orders[
-                                    pa].current_step.workplace.name)
-                                print(production_orders[pa].next_step.workplace)
-                                raise e
-
-                        else:
-                            production_orders[pa].current_step.workplace.output_wip.append(production_orders[pa])
-                        if logpath and not mute:
-                            f.write(f'{pa} {production_orders[pa].current_step.opcID} appended to output wip of {production_orders[pa].current_step.workplace.name}\n')
+                # if the current step is worked on/done, shift immediately to the next step
+                datecheck = production_orders[pa].current_step.opc_endtimestamp < datetime.now() - timedelta(days=days_offset) if production_orders[pa].current_step.opc_endtimestamp else False
+                if production_orders[pa].current_step.opc_state is 3 and datecheck:
+                    # if the current step is done, try to append to input of next step, if next_step exists
+                    if production_orders[pa].next_step:
+                        # if the pa has a next step, operate that one, else its finished already
+                        production_orders[pa].next_step.workplace.input_wip.append(production_orders[pa])
                     else:
-                        production_orders[pa].current_step.workplace.input_wip.append(production_orders[pa])
-                        if logpath and not mute:
-                            f.write(f'{pa} {production_orders[pa].current_step.opcID} appended to input wip of {production_orders[pa].current_step.workplace.name}\n')
+                        production_orders[pa].current_step.workplace.output_wip.append(production_orders[pa])
+                    if logpath and not mute:
+                        f.write(f'{pa} {production_orders[pa].current_step.opcID} appended to output wip of {production_orders[pa].current_step.workplace.name}\n')
+                else:
+                    production_orders[pa].current_step.workplace.input_wip.append(production_orders[pa])
+                    if logpath and not mute:
+                        f.write(
+                            f'{pa} {production_orders[pa].current_step.opcID} appended to input wip of {production_orders[pa].current_step.workplace.name}\n')
             else:
                 if logpath:
                     f.write(f'PA {pa} has no active opc')
