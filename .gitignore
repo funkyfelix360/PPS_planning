@@ -15,3 +15,5 @@ finish.png
 plots/start.png
 test.txt
 /webapp
+/.idea
+/__pycache__
