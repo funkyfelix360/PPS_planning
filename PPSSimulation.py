@@ -83,14 +83,14 @@ def day_based_simulation(production_orders, opcs, workplaces, dispatchdepartment
         for step in range(steps):
             simtime.next_day()
             print(f'Step: {step}', simtime.date)
-            f.write(f'Step: {step}, {simtime.date}\n')
+            f.write(f'\n\nStep: {step}, {simtime.date}\n')
 
             print(f'Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
             f.write(f'Schichtzeit [N,F,T,S] {simtime.current_shift}\n')
             for disp in dispatchdepartments.values():
                 f.write(f'Dispatchliste {disp.name}\n')
                 for wp in disp.workplaces:
-                    f.write(f'\t{wp.name} {wp.shifts} {wp.input_wip}\n')
+                    f.write(f'\t{wp.name} {wp.shifts} {[pa.PA for pa in wp.input_wip]}\n')
                 f.write('\n')
                 disp.step(f)
 
@@ -294,6 +294,7 @@ class Dispatchdepartment:
                 pa.current_step.opc_endtimestamp = date.date
                 # fetch next step
                 if pa.next_step is None:
+                    # output gets overwritten in next step, so no need to delete finished sub orders explicitly from the output_wip
                     pa.FinishedDate = date.date
                     continue
                 pa.current_step = pa.next_step
@@ -331,40 +332,6 @@ class ProductionOrder:
     This class is designed to encapsulate all relevant data for production
     orders, including product details, manufacturing specifics, delivery
     deadlines, and order status.
-
-    :ivar PA: Production area identifier.
-    :ivar ProductNumber: Identifier for the product associated with the
-        production order.
-    :ivar ProductVersion: Version of the product.
-    :ivar ProductRevision: Revision of the product.
-    :ivar PlanNumber: The plan number related to the production process.
-    :ivar PhasenCode: Code that identifies the manufacturing phase.
-    :ivar PiecesPerBoard: Number of pieces per board produced.
-    :ivar TargetAmount: Total amount of product to be produced.
-    :ivar Customer: Customer associated with the production order.
-    :ivar StartDate: Start date of the production.
-    :ivar FinishedDate: Date when production was completed.
-    :ivar PPSAdminDate: Date assigned for administrative purposes by the PPS
-        system.
-    :ivar SapOrderType: SAP order type linked to this production order.
-    :ivar IsDeleted: A boolean indicator specifying if the production order is
-        marked as deleted.
-    :ivar DeliveryForecastPpsDate: Forecasted delivery date as per PPS system.
-    :ivar DeliveryCriticalityPpsBool: Indicator to mark if the order has
-        delivery criticality in the PPS system.
-    :ivar operationcycles: List of cycles representing various operations in
-        the production process.
-    :ivar current_step: Represents the current operation cycle or step within
-        the production process.
-    :type current_step: OperationCycle
-    :ivar current_dispatchdep: Current dispatch dependency, indicating the
-        dispatch-related state.
-    :ivar next_step: Represents the next operation cycle or step to be
-        executed in the production process.
-    :ivar next_dispatchdep: Next dispatch dependency, indicating the state
-        after a subsequent dispatch.
-    :ivar age: Duration or age representing the order's operational or time
-        status.
     """
 
     def __init__(self,

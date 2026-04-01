@@ -2,7 +2,6 @@ import os
 from time import sleep
 from datetime import datetime
 import matplotlib; matplotlib.use("TkAgg")
-from matplotlib import pyplot as plt
 import PPSSimulation as pps
 import dataloading as load
 secret_path = 'P:/Public/Laufende_Projekte_kein_invest/2026 PPS Planung/Programmierung/data/'

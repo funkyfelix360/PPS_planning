@@ -100,3 +100,13 @@ def plot_saturation(dispatchdepartments, sats, simtime, fig_table, ax_table):
     ax_table.axis('off')
     ax_table.axis('tight')
     return sats
+
+def initialize_simple_plot():
+    return plt.subplots()
+
+def plot_simple_barplot(ax, x, y, xlabel, ylabel, title):
+    ax.cla()
+    ax.bar(x,y)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
