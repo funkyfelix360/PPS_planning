@@ -352,7 +352,7 @@ class ProductionOrder:
                  LastBooking = None,
                  ARDeltaPPS = None,
                  PPSAdminDate=None,
-                 SapOrderType=None,
+                 SapOrderType=None, #TODO Unteraufträge werden nicht abschlussgebucht. Daher mithilfe von SAPOrderType vom WIP ausschliessen
                  IsDeleted=None,
                  DeliveryForecastPpsDate=None,
                  DeliveryCriticalityPpsBool=None,
